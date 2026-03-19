@@ -1,0 +1,105 @@
+agent:
+  system_template: |
+    You are a helpful assistant that can interact with a computer to solve tasks.
+    You must provide exactly ONE bash code block per response. Include a THOUGHT section before your command.
+  instance_template: |
+    <uploaded_files>
+    /app
+    </uploaded_files>
+    I've uploaded a code repository in the directory /app. Consider the following PR description:
+
+    <pr_description>
+    {{task}}
+    </pr_description>
+
+    Can you help me implement the necessary changes to the repository so that the requirements specified in the <pr_description> are met?
+    I've already taken care of all changes to any of the test files described in the <pr_description>. This means you DON'T have to modify the testing logic or any of the tests in any way!
+
+    Your task is to make the minimal changes to non-test files in the /app directory to ensure the <pr_description> is satisfied.
+
+    Follow these steps to resolve the issue:
+    1. As a first step, explore the repository structure and find code relevant to the <pr_description>
+    2. Create a script to reproduce the error and execute it to confirm the error
+    3. Edit the source code of the repo to resolve the issue
+    4. Rerun your reproduce script and confirm that the error is fixed!
+    5. Think about edge cases and make sure your fix handles them as well
+
+    Your thinking should be thorough and so it's fine if it's very long.
+
+    Important rules:
+    - Each response must contain a THOUGHT section followed by exactly ONE bash code block
+    - Commands are executed in a subshell — directory and environment variable changes do not persist between steps
+    - Do NOT use interactive tools (vi, nano, etc.)
+    - To edit files, use `cat <<'EOF' > file` for full rewrites, or `sed -i` for targeted changes
+    - To view files with line numbers, use `cat -n file | head -n END | tail -n +START`
+
+    When you've completed your work and verified the fix, submit with:
+
+    ```bash
+    echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && git add -A && git diff --cached
+    ```
+
+    Before submitting, make sure you have:
+    1. Re-run your reproduction script to confirm the fix works
+    2. Removed any temporary reproduction scripts
+    3. NOT modified any test files (revert with `git checkout -- path/to/test` if needed)
+    4. Reviewed your changes in `git diff` for correctness
+  action_observation_template: |
+    <returncode>{{output.returncode}}</returncode>
+    {% if output.output | length < 10000 -%}
+    <output>
+    {{ output.output -}}
+    </output>
+    {%- else -%}
+    <warning>
+    The output of your last command was too long.
+    Please try a different command that produces less output.
+    If you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.
+    If you're using grep or find and it produced too much output, you can use a more selective search pattern.
+    If you really need to see something from the full command's output, you can redirect output to a file and then search in that file.
+    </warning>
+    {%- set elided_chars = output.output | length - 10000 -%}
+    <output_head>
+    {{ output.output[:5000] }}
+    </output_head>
+    <elided_chars>
+    {{ elided_chars }} characters elided
+    </elided_chars>
+    <output_tail>
+    {{ output.output[-5000:] }}
+    </output_tail>
+    {%- endif -%}
+  format_error_template: |
+    Please always provide EXACTLY ONE action in triple backticks, found {{actions|length}} actions.
+
+    Please format your action in triple backticks as shown in <response_example>.
+
+    <response_example>
+    Here are some thoughts about why you want to perform the action.
+
+    ```bash
+    <action>
+    ```
+    </response_example>
+
+    If you have completed your assignment, please consult the first message about how to
+    submit your solution (you will not be able to continue working on this task after that).
+  step_limit: 500
+  cost_limit: 15.
+
+environment:
+  cwd: "/testbed"
+  timeout: 300
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: 'off'
+    TQDM_DISABLE: '1'
+  environment_class: docker
+
+model:
+  model_name: "anthropic/claude-sonnet-4-5-20250929"
+  model_kwargs:
+    drop_params: true
+    temperature: 0.0

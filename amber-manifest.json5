@@ -1,45 +1,58 @@
 {
-  manifest_version: "0.1.0",
+  manifest_version: "0.2.0",
+  experimental_features: ["docker"],
 
-  // TODO: Declare all config your agent needs from the deployer
-  // Use secret: true for sensitive values like API keys
   config_schema: {
     type: "object",
     properties: {
-      my_api_key: { type: "string", secret: true },
+      model_name: {
+        type: "string",
+        description: "LLM model name for mini-swe-agent (e.g., gpt-4o, openrouter/deepseek/deepseek-v3.2, anthropic/claude-sonnet-4-5-20250929)",
+        default: "gpt-4o",
+      },
+      use_gold_patches: { type: "string", description: "Set to 'true' for gold-patch testing mode", default: "" },
+      cmd_timeout: { type: "string", description: "Per-command timeout in seconds", default: "300" },
+      step_limit: { type: "string", description: "Max agent steps per instance", default: "500" },
+      cost_limit: { type: "string", description: "Max cost per instance in USD", default: "15.0" },
+      temperature: { type: "string", description: "LLM sampling temperature", default: "0.0" },
+      openai_api_key: { type: "string", secret: true },
+      anthropic_api_key: { type: "string", secret: true },
+      openrouter_api_key: { type: "string", secret: true },
     },
-    required: ["my_api_key"],
+    required: ["openrouter_api_key"],
     additionalProperties: false,
   },
 
-  // External services this agent uses
-  slots: {
-    proxy: { kind: "a2a", optional: true },
-  },
-
-  // Runtime configuration
   program: {
-    // TODO: Replace with your docker image
-    image: "ghcr.io/<your-username>/<your-repo-name>:latest",
-    entrypoint: "uv run python src/server.py --host 0.0.0.0 --port 9010",
+    image: "ghcr.io/aefhm/swe-bench-purple-agent:latest",
+    entrypoint: "uv run python src/server.py --host 0.0.0.0 --port 9009",
 
-    // TODO: Pass config values as environment variables
     env: {
-      MY_API_KEY: "${config.my_api_key}",
+      MODEL_NAME: "${config.model_name}",
+      USE_GOLD_PATCHES: "${config.use_gold_patches}",
+      MSWEA_CMD_TIMEOUT: "${config.cmd_timeout}",
+      MSWEA_STEP_LIMIT: "${config.step_limit}",
+      MSWEA_COST_LIMIT: "${config.cost_limit}",
+      MSWEA_TEMPERATURE: "${config.temperature}",
+      OPENAI_API_KEY: { when: "config.openai_api_key", value: "${config.openai_api_key}" },
+      ANTHROPIC_API_KEY: { when: "config.anthropic_api_key", value: "${config.anthropic_api_key}" },
+      OPENROUTER_API_KEY: "${config.openrouter_api_key}",
     },
+
+    mounts: [
+      { path: "/var/run/docker.sock", from: "framework.docker" },
+    ],
 
     network: {
       endpoints: [
-        { name: "a2a_endpoint", port: 9010 }, // ensure port matches your entrypoint
+        { name: "a2a_endpoint", port: 9009 },
       ],
     },
   },
 
-  // Capabilities provided by this agent
   provides: {
     a2a: { kind: "a2a", endpoint: "a2a_endpoint" },
   },
 
-  // Capabilities exposed to the scenario
   exports: { a2a: "a2a" },
 }
