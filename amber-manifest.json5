@@ -10,11 +10,6 @@
         description: "LLM model name for litellm (e.g., gpt-4o, anthropic/claude-sonnet-4-5-20250929, gemini/gemini-2.5-pro, openrouter/deepseek/deepseek-v3.2)",
         default: "gpt-4o",
       },
-      use_gold_patches: { type: "string", description: "Set to 'true' for gold-patch testing mode", default: "" },
-      cmd_timeout: { type: "string", description: "Per-command timeout in seconds", default: "300" },
-      step_limit: { type: "string", description: "Max agent steps per instance", default: "500" },
-      cost_limit: { type: "string", description: "Max cost per instance in USD", default: "15.0" },
-      temperature: { type: "string", description: "LLM sampling temperature", default: "0.0" },
       openai_api_key: { type: "string", secret: true },
       anthropic_api_key: { type: "string", secret: true },
       openrouter_api_key: { type: "string", secret: true },
@@ -30,11 +25,6 @@
 
     env: {
       MODEL_NAME: "${config.model_name}",
-      USE_GOLD_PATCHES: "${config.use_gold_patches}",
-      MSWEA_CMD_TIMEOUT: "${config.cmd_timeout}",
-      MSWEA_STEP_LIMIT: "${config.step_limit}",
-      MSWEA_COST_LIMIT: "${config.cost_limit}",
-      MSWEA_TEMPERATURE: "${config.temperature}",
       OPENAI_API_KEY: { when: "config.openai_api_key", value: "${config.openai_api_key}" },
       ANTHROPIC_API_KEY: { when: "config.anthropic_api_key", value: "${config.anthropic_api_key}" },
       OPENROUTER_API_KEY: { when: "config.openrouter_api_key", value: "${config.openrouter_api_key}" },
