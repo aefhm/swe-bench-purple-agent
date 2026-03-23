@@ -25,6 +25,7 @@ RUN \
     --mount=type=cache,target=/home/agent/.cache/uv,uid=1000 \
     uv sync --frozen
 
+USER agent
 ENTRYPOINT ["uv", "run", "python", "src/server.py"]
 CMD ["--host", "0.0.0.0", "--port", "9009"]
 EXPOSE 9009
