@@ -7,9 +7,14 @@ Falls back to gold patches if --use-gold-patches is set (for pipeline testing).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import queue
+import subprocess
+import tempfile
+import threading
 from pathlib import Path
 
 from a2a.server.tasks import TaskUpdater
@@ -19,6 +24,12 @@ from a2a.utils import get_message_text, new_agent_text_message
 from messenger import Messenger
 
 logger = logging.getLogger("purple-agent")
+
+# Resolve once at import time
+_RUNNER_SCRIPT = str(Path(__file__).resolve().parent / "run_mini_swe_agent.py")
+_DEFAULT_CONFIG = str(Path(__file__).resolve().parent.parent / "config" / "swebench.yaml")
+
+_SENTINEL = None  # marks end of stderr stream
 
 
 class Agent:
@@ -108,6 +119,7 @@ class Agent:
                 problem_statement=problem_statement,
                 docker_image=docker_image,
                 base_commit=base_commit,
+                updater=updater,
             )
         except Exception as e:
             logger.exception(f"mini-swe-agent failed for {instance_id}")
@@ -137,102 +149,117 @@ class Agent:
         problem_statement: str,
         docker_image: str,
         base_commit: str,
+        updater: TaskUpdater,
     ) -> str | None:
-        """Run mini-swe-agent in a Docker container to solve the problem.
+        """Run mini-swe-agent as a subprocess, fully isolated from the A2A event loop.
 
-        This runs synchronously (mini-swe-agent is sync) so we run it in a
-        thread to avoid blocking the event loop.
+        stderr streams live to both the server log and as A2A status updates
+        back to the green agent.  stdout is captured for the JSON result.
         """
-        import asyncio
-
-        return await asyncio.to_thread(
-            self._run_mini_swe_agent_sync,
-            instance_id=instance_id,
-            problem_statement=problem_statement,
-            docker_image=docker_image,
-            base_commit=base_commit,
-        )
-
-    def _run_mini_swe_agent_sync(
-        self,
-        *,
-        instance_id: str,
-        problem_statement: str,
-        docker_image: str,
-        base_commit: str,
-    ) -> str | None:
-        """Synchronous core: create DockerEnvironment + DefaultAgent, run, return patch."""
-        import yaml
-        from minisweagent.agents.default import AgentConfig, DefaultAgent
         from minisweagent.config import get_config_path
-        from minisweagent.environments.docker import DockerEnvironment
-        from minisweagent.models.litellm_model import LitellmModel
 
-        logger.info(f"Starting mini-swe-agent for {instance_id}")
-        logger.info(f"  image: {docker_image}")
-        logger.info(f"  model: {self.model_name}")
+        config_path = _DEFAULT_CONFIG
+        if not Path(config_path).exists():
+            config_path = str(get_config_path("swebench"))
 
-        # Load the SWE-bench config for proper prompts/templates
-        # Prefer vendored config next to this file, fall back to installed package
-        config_path = Path(__file__).resolve().parent.parent / "config" / "swebench.yaml"
-        if not config_path.exists():
-            config_path = get_config_path("swebench")
-        with open(config_path) as f:
-            swebench_config = yaml.safe_load(f)
-        agent_cfg = swebench_config.get("agent", {})
-
-        # SWE-bench Pro repos are cloned into /app (not /testbed).
-        # The base images have ENTRYPOINT ["/bin/bash"], so we must
-        # override it — otherwise `sleep 2h` gets passed as a bash
-        # script arg and the container exits immediately.
-        # Also override cwd to /app (swebench.yaml defaults to /testbed).
-        cmd_timeout = int(os.environ.get("MSWEA_CMD_TIMEOUT", 300))
-        step_limit = int(os.environ.get("MSWEA_STEP_LIMIT", 500))
-        cost_limit = float(os.environ.get("MSWEA_COST_LIMIT", 15.0))
-        temperature = float(os.environ.get("MSWEA_TEMPERATURE", 0.0))
-
-        env = DockerEnvironment(
-            image=docker_image,
-            cwd="/app",
-            timeout=cmd_timeout,
-            run_args=["--rm", "--entrypoint", ""],
-            env={
-                "PAGER": "cat",
-                "MANPAGER": "cat",
-                "LESS": "-R",
-                "PIP_PROGRESS_BAR": "off",
-                "TQDM_DISABLE": "1",
-            },
-        )
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", prefix=f"mswea-{instance_id}-", delete=False
+        ) as f:
+            json.dump({
+                "instance_id": instance_id,
+                "problem_statement": problem_statement,
+                "docker_image": docker_image,
+                "base_commit": base_commit,
+                "model_name": self.model_name,
+                "config_path": config_path,
+            }, f)
+            instance_file = f.name
 
         try:
-            model_kwargs = {"temperature": temperature, "drop_params": True}
-            extra_kwargs = {}
-            if "anthropic" in self.model_name or "claude" in self.model_name:
-                extra_kwargs["set_cache_control"] = "default_end"
+            timeout = int(os.environ.get("MSWEA_SUBPROCESS_TIMEOUT", 3600))
 
-            model = LitellmModel(
-                model_name=self.model_name,
-                model_kwargs=model_kwargs,
-                **extra_kwargs,
+            # Thread-safe queue: subprocess thread pushes lines, async task consumes them
+            log_queue: queue.Queue[str | None] = queue.Queue()
+
+            # Start subprocess in a background thread
+            sub_future: asyncio.Future[tuple[str, int]] = asyncio.get_event_loop().run_in_executor(
+                None,
+                self._run_subprocess,
+                instance_file,
+                timeout,
+                log_queue,
             )
 
-            agent = DefaultAgent(
-                model=model,
-                env=env,
-                system_template=agent_cfg.get("system_template", AgentConfig.system_template),
-                instance_template=agent_cfg.get("instance_template", AgentConfig.instance_template),
-                action_observation_template=agent_cfg.get("action_observation_template", AgentConfig.action_observation_template),
-                format_error_template=agent_cfg.get("format_error_template", AgentConfig.format_error_template),
-                step_limit=agent_cfg.get("step_limit", step_limit),
-                cost_limit=agent_cfg.get("cost_limit", cost_limit),
-            )
+            # Forward log lines as A2A status updates while subprocess runs
+            while True:
+                try:
+                    line = await asyncio.to_thread(log_queue.get, timeout=0.5)
+                except Exception:
+                    # queue.get timed out — check if subprocess is done
+                    if sub_future.done():
+                        break
+                    continue
 
-            exit_status, result_message, patch = agent.run(problem_statement)
+                if line is _SENTINEL:
+                    break
 
-            logger.info(f"mini-swe-agent finished for {instance_id}: {exit_status}")
-            logger.info(f"  patch length: {len(patch) if patch else 0}")
+                logger.info("[runner] %s", line)
+                # Send step lines back to green agent as status updates
+                if "step " in line:
+                    # Extract the meaningful part after the log prefix
+                    # e.g. "2026-03-24 ... INFO step 3 | calls=2 cost=$0.05"
+                    parts = line.split(" INFO ", 1)
+                    status_text = parts[1] if len(parts) > 1 else line
+                    await updater.update_status(
+                        TaskState.working,
+                        new_agent_text_message(status_text),
+                    )
+
+            stdout, returncode = await sub_future
+
+            if returncode != 0:
+                raise RuntimeError(
+                    f"mini-swe-agent subprocess exited with code {returncode}"
+                )
+
+            output = json.loads(stdout)
+            patch = output.get("patch", "")
+
+            logger.info(f"mini-swe-agent finished for {instance_id}: {output.get('exit_status')}")
+            logger.info(f"  patch length: {len(patch)}")
 
             return patch if patch else None
         finally:
-            env.cleanup()
+            Path(instance_file).unlink(missing_ok=True)
+
+    @staticmethod
+    def _run_subprocess(
+        instance_file: str,
+        timeout: int,
+        log_queue: queue.Queue[str | None],
+    ) -> tuple[str, int]:
+        """Run the runner script, pushing stderr lines into the queue."""
+        proc = subprocess.Popen(
+            ["python", _RUNNER_SCRIPT, "--instance-file", instance_file],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ},
+        )
+
+        try:
+            assert proc.stderr is not None
+            for line in proc.stderr:
+                log_queue.put(line.rstrip("\n"))
+
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise
+        finally:
+            log_queue.put(_SENTINEL)
+
+        assert proc.stdout is not None
+        stdout = proc.stdout.read()
+        return stdout, proc.returncode
