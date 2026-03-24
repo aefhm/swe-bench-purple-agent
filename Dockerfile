@@ -28,6 +28,8 @@ RUN \
 # Ensure agent user owns everything in its home (uv sync runs as root)
 RUN chown -R agent:agent /home/agent
 
+ENV MSWEA_COST_TRACKING=ignore_errors
+
 ENTRYPOINT ["uv", "run", "python", "src/server.py"]
 CMD ["--host", "0.0.0.0", "--port", "9009"]
 EXPOSE 9009
