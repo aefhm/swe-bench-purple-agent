@@ -10,7 +10,7 @@ Usage:
 
 The instance JSON must contain:
     instance_id, problem_statement, docker_image, base_commit,
-    model_name, config_path
+    model_name, llm_api_base, config_path
 
 Writes the patch (or empty string) to stdout as a JSON object:
     {"patch": "...", "exit_status": "..."}
@@ -45,6 +45,7 @@ def main() -> None:
     problem_statement = inst["problem_statement"]
     docker_image = inst["docker_image"]
     model_name = inst["model_name"]
+    llm_api_base = inst.get("llm_api_base")
     config_path = inst["config_path"]
 
     import yaml
@@ -87,6 +88,8 @@ def main() -> None:
         extra_kwargs = {}
         if "anthropic" in model_name or "claude" in model_name:
             extra_kwargs["set_cache_control"] = "default_end"
+        if llm_api_base:
+            model_kwargs["base_url"] = llm_api_base
 
         model = LitellmModel(
             model_name=model_name,

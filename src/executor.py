@@ -30,11 +30,13 @@ class Executor(AgentExecutor):
         data_dir: str = "data",
         use_gold_patches: bool = False,
         model_name: str = "gpt-4o",
+        llm_api_base: str | None = None,
     ):
         self.agents: dict[str, Agent] = {}
         self.data_dir = data_dir
         self.use_gold_patches = use_gold_patches
         self.model_name = model_name
+        self.llm_api_base = llm_api_base
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         msg = context.message
@@ -60,6 +62,7 @@ class Executor(AgentExecutor):
                 data_dir=self.data_dir,
                 use_gold_patches=self.use_gold_patches,
                 model_name=self.model_name,
+                llm_api_base=self.llm_api_base,
             )
             self.agents[context_id] = agent
 

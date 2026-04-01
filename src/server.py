@@ -32,6 +32,12 @@ def main():
         "--model", type=str, default=os.environ.get("MODEL_NAME", "gpt-4o"),
         help="LLM model name for mini-swe-agent",
     )
+    parser.add_argument(
+        "--llm-api-base",
+        type=str,
+        default=os.environ.get("LLM_API_BASE"),
+        help="OpenAI-compatible base URL for the LLM API",
+    )
     args = parser.parse_args()
 
     skill = AgentSkill(
@@ -59,6 +65,7 @@ def main():
             data_dir=args.data_dir,
             use_gold_patches=args.use_gold_patches,
             model_name=args.model,
+            llm_api_base=args.llm_api_base,
         ),
         task_store=InMemoryTaskStore(),
     )

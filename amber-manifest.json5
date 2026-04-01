@@ -26,6 +26,7 @@
     env: {
       MSWEA_COST_TRACKING: "ignore_errors",
       MODEL_NAME: "${config.model_name}",
+      LLM_API_BASE: { when: "slots.llm.url", value: "${slots.llm.url}" },
       OPENAI_API_KEY: { when: "config.openai_api_key", value: "${config.openai_api_key}" },
       ANTHROPIC_API_KEY: { when: "config.anthropic_api_key", value: "${config.anthropic_api_key}" },
       OPENROUTER_API_KEY: { when: "config.openrouter_api_key", value: "${config.openrouter_api_key}" },
@@ -45,6 +46,10 @@
 
   provides: {
     a2a: { kind: "a2a", endpoint: "a2a_endpoint" },
+  },
+
+  slots: {
+    llm: { kind: "llm" },
   },
 
   exports: { a2a: "a2a" },
