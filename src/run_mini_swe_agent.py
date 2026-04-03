@@ -58,7 +58,7 @@ def main() -> None:
     agent_cfg = swebench_config.get("agent", {})
 
     cmd_timeout = int(os.environ.get("MSWEA_CMD_TIMEOUT", 300))
-    step_limit = int(os.environ.get("MSWEA_STEP_LIMIT", 500))
+    step_limit = int(os.environ.get("MSWEA_STEP_LIMIT", 75))
     cost_limit = float(os.environ.get("MSWEA_COST_LIMIT", 15.0))
     temperature = float(os.environ.get("MSWEA_TEMPERATURE", 0.0))
     llm_timeout = int(os.environ.get("MSWEA_LLM_TIMEOUT", 120))
