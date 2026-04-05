@@ -82,7 +82,7 @@ def test_runner_uses_llm_api_base(monkeypatch, tmp_path, capsys):
                 "instance_id": "instance-1",
                 "problem_statement": "Fix the bug",
                 "docker_image": "example/image:latest",
-                "model_name": "openrouter/deepseek/deepseek-v3.2",
+                "model_name": "gpt-4o",
                 "llm_api_base": "http://127.0.0.1:4010",
                 "config_path": str(config_path),
             }

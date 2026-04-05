@@ -19,14 +19,14 @@ docker run -d -p 9009:9009 \
 # Run (real mode)
 docker run -d -p 9009:9009 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -e MODEL_NAME=openrouter/deepseek/deepseek-v3.2 \
-  -e OPENROUTER_API_KEY=your-key \
+  -e MODEL_NAME=gpt-4o \
+  -e OPENAI_API_KEY=your-key \
   swe-bench-purple-agent --host 0.0.0.0 --port 9009
 
 # Run against an OpenAI-compatible proxy provided by Amber
 docker run -d -p 9009:9009 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -e MODEL_NAME=openrouter/deepseek/deepseek-v3.2 \
+  -e MODEL_NAME=gpt-4o \
   -e LLM_API_BASE=http://host.docker.internal:4010 \
   swe-bench-purple-agent --host 0.0.0.0 --port 9009
 ```
