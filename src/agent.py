@@ -15,6 +15,7 @@ import queue
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from a2a.server.tasks import TaskUpdater
@@ -30,6 +31,7 @@ _RUNNER_SCRIPT = str(Path(__file__).resolve().parent / "run_mini_swe_agent.py")
 _DEFAULT_CONFIG = str(Path(__file__).resolve().parent.parent / "config" / "swebench.yaml")
 
 _SENTINEL = None  # marks end of stderr stream
+_HEARTBEAT_INTERVAL = 120  # seconds between SSE keepalive updates
 
 
 class Agent:
@@ -193,12 +195,24 @@ class Agent:
                 log_queue,
             )
 
-            # Forward log lines as A2A status updates while subprocess runs
+            # Forward log lines as A2A status updates while subprocess runs.
+            # A heartbeat is sent every _HEARTBEAT_INTERVAL seconds when no
+            # real status update has been emitted, keeping upstream proxies
+            # (e.g. the agentbeats-gateway reverse proxy) from timing out on
+            # long-lived SSE connections.
+            _last_update = time.monotonic()
             while True:
                 try:
                     line = await asyncio.to_thread(log_queue.get, timeout=0.5)
                 except Exception:
-                    # queue.get timed out — check if subprocess is done
+                    # queue.get timed out — send heartbeat if needed, then
+                    # check if subprocess is done.
+                    if time.monotonic() - _last_update >= _HEARTBEAT_INTERVAL:
+                        await updater.update_status(
+                            TaskState.working,
+                            new_agent_text_message("still working..."),
+                        )
+                        _last_update = time.monotonic()
                     if sub_future.done():
                         break
                     continue
@@ -217,6 +231,7 @@ class Agent:
                         TaskState.working,
                         new_agent_text_message(status_text),
                     )
+                    _last_update = time.monotonic()
 
             stdout, returncode = await sub_future
 
