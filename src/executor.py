@@ -72,7 +72,12 @@ class Executor(AgentExecutor):
         try:
             await agent.run(msg, updater)
             if not updater._terminal_state_reached:
+                print(
+                    f"Executor completing task {task.id} for context {context_id} "
+                    f"(terminal_reached={updater._terminal_state_reached})"
+                )
                 await updater.complete()
+                print(f"Executor completed task {task.id} for context {context_id}")
         except Exception as e:
             print(f"Task failed with agent error: {e}")
             await updater.failed(

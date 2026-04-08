@@ -12,7 +12,7 @@ if str(SRC) not in sys.path:
 import run_mini_swe_agent as runner
 
 
-def test_runner_uses_llm_api_base(monkeypatch, tmp_path, capsys):
+def test_runner_uses_llm_api_base(monkeypatch, tmp_path):
     captured: dict[str, object] = {}
 
     class FakeAgentConfig:
@@ -76,6 +76,7 @@ def test_runner_uses_llm_api_base(monkeypatch, tmp_path, capsys):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("agent: {}\n")
     instance_path = tmp_path / "instance.json"
+    result_path = tmp_path / "result.json"
     instance_path.write_text(
         json.dumps(
             {
@@ -92,7 +93,13 @@ def test_runner_uses_llm_api_base(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run_mini_swe_agent.py", "--instance-file", str(instance_path)],
+        [
+            "run_mini_swe_agent.py",
+            "--instance-file",
+            str(instance_path),
+            "--result-file",
+            str(result_path),
+        ],
     )
 
     runner.main()
@@ -101,5 +108,5 @@ def test_runner_uses_llm_api_base(monkeypatch, tmp_path, capsys):
     assert model_init["model_kwargs"]["base_url"] == "http://127.0.0.1:4010"
     assert captured["cleanup_called"] is True
 
-    result = json.loads(capsys.readouterr().out)
+    result = json.loads(result_path.read_text())
     assert result["patch"] == "diff --git a/foo b/foo"

@@ -32,8 +32,6 @@ _DEFAULT_CONFIG = str(Path(__file__).resolve().parent.parent / "config" / "swebe
 
 _SENTINEL = None  # marks end of stderr stream
 _HEARTBEAT_INTERVAL = 60  # seconds between SSE keepalive updates
-
-
 class Agent:
     def __init__(
         self,
@@ -141,10 +139,17 @@ class Agent:
             return
 
         result = json.dumps({"instance_id": instance_id, "patch": patch})
+        logger.info(
+            "Publishing patch artifact for %s (patch_len=%d, payload_len=%d)",
+            instance_id,
+            len(patch),
+            len(result),
+        )
         await updater.add_artifact(
             parts=[Part(root=TextPart(text=result))],
             name="Patch",
         )
+        logger.info("Finished publishing patch artifact for %s", instance_id)
 
     async def _run_mini_swe_agent(
         self,
@@ -179,6 +184,10 @@ class Agent:
                 "config_path": config_path,
             }, f)
             instance_file = f.name
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", prefix=f"mswea-result-{instance_id}-", delete=False
+        ) as f:
+            result_file = f.name
 
         try:
             timeout = int(os.environ.get("MSWEA_SUBPROCESS_TIMEOUT", 1800))
@@ -191,6 +200,7 @@ class Agent:
                 None,
                 self._run_subprocess,
                 instance_file,
+                result_file,
                 timeout,
                 log_queue,
             )
@@ -238,37 +248,74 @@ class Agent:
                     )
                     _last_update = time.monotonic()
 
+            logger.info("Awaiting subprocess future for %s", instance_id)
             stdout, returncode = await sub_future
+            logger.info(
+                "Subprocess future resolved for %s (returncode=%s, stdout_len=%d)",
+                instance_id,
+                returncode,
+                len(stdout or ""),
+            )
 
             if returncode != 0:
                 raise RuntimeError(
                     f"mini-swe-agent subprocess exited with code {returncode}"
                 )
 
-            output = json.loads(stdout)
+            logger.info("Reading runner result file for %s from %s", instance_id, result_file)
+            try:
+                output = json.loads(Path(result_file).read_text())
+            except (OSError, json.JSONDecodeError):
+                logger.error(
+                    "Runner result file was not valid JSON for %s (returncode=%s, result_file=%s, stdout_len=%d, stdout_preview=%r)",
+                    instance_id,
+                    returncode,
+                    result_file,
+                    len(stdout or ""),
+                    (stdout or "")[:200],
+                )
+                raise
             patch = output.get("patch", "")
 
             logger.info(f"mini-swe-agent finished for {instance_id}: {output.get('exit_status')}")
             logger.info(f"  patch length: {len(patch)}")
 
+            logger.info("Returning patch from _run_mini_swe_agent for %s", instance_id)
             return patch if patch else None
         finally:
             Path(instance_file).unlink(missing_ok=True)
+            Path(result_file).unlink(missing_ok=True)
 
     @staticmethod
     def _run_subprocess(
         instance_file: str,
+        result_file: str,
         timeout: int,
         log_queue: queue.Queue[str | None],
     ) -> tuple[str, int]:
         """Run the runner script, pushing stderr lines into the queue."""
         proc = subprocess.Popen(
-            ["python", _RUNNER_SCRIPT, "--instance-file", instance_file],
+            [
+                "python",
+                _RUNNER_SCRIPT,
+                "--instance-file",
+                instance_file,
+                "--result-file",
+                result_file,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             env={**os.environ},
         )
+        stdout_chunks: list[str] = []
+
+        def _drain_stdout() -> None:
+            assert proc.stdout is not None
+            stdout_chunks.append(proc.stdout.read())
+
+        stdout_thread = threading.Thread(target=_drain_stdout, daemon=True)
+        stdout_thread.start()
 
         try:
             assert proc.stderr is not None
@@ -283,6 +330,6 @@ class Agent:
         finally:
             log_queue.put(_SENTINEL)
 
-        assert proc.stdout is not None
-        stdout = proc.stdout.read()
+        stdout_thread.join()
+        stdout = "".join(stdout_chunks)
         return stdout, proc.returncode

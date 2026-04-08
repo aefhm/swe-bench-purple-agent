@@ -24,7 +24,7 @@ agent:
     4. Rerun your reproduce script and confirm that the error is fixed!
     5. Think about edge cases and make sure your fix handles them as well
 
-    Your thinking should be thorough and so it's fine if it's very long.
+    Keep your THOUGHT concise and focused on the next action.
 
     Important rules:
     - Each response must contain a THOUGHT section followed by exactly ONE bash code block
@@ -46,7 +46,7 @@ agent:
     4. Reviewed your changes in `git diff` for correctness
   action_observation_template: |
     <returncode>{{output.returncode}}</returncode>
-    {% if output.output | length < 10000 -%}
+    {% if output.output | length < 4000 -%}
     <output>
     {{ output.output -}}
     </output>
@@ -58,15 +58,15 @@ agent:
     If you're using grep or find and it produced too much output, you can use a more selective search pattern.
     If you really need to see something from the full command's output, you can redirect output to a file and then search in that file.
     </warning>
-    {%- set elided_chars = output.output | length - 10000 -%}
+    {%- set elided_chars = output.output | length - 4000 -%}
     <output_head>
-    {{ output.output[:5000] }}
+    {{ output.output[:2000] }}
     </output_head>
     <elided_chars>
     {{ elided_chars }} characters elided
     </elided_chars>
     <output_tail>
-    {{ output.output[-5000:] }}
+    {{ output.output[-2000:] }}
     </output_tail>
     {%- endif -%}
   format_error_template: |
@@ -84,7 +84,7 @@ agent:
 
     If you have completed your assignment, please consult the first message about how to
     submit your solution (you will not be able to continue working on this task after that).
-  step_limit: 75
+  step_limit: 50
   cost_limit: 15.
 
 environment:

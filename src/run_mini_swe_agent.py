@@ -6,13 +6,13 @@ Invoked by agent.py as a child process so that litellm / httpx run in
 complete isolation from the A2A event loop.
 
 Usage:
-    python run_mini_swe_agent.py --instance-file /tmp/instance.json
+    python run_mini_swe_agent.py --instance-file /tmp/instance.json --result-file /tmp/result.json
 
 The instance JSON must contain:
     instance_id, problem_statement, docker_image, base_commit,
     model_name, llm_api_base, config_path
 
-Writes the patch (or empty string) to stdout as a JSON object:
+Writes the patch result to --result-file as JSON:
     {"patch": "...", "exit_status": "..."}
 """
 
@@ -32,10 +32,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("mini-swe-agent-runner")
 
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--instance-file", required=True)
+    parser.add_argument("--result-file", required=True)
     args = parser.parse_args()
 
     with open(args.instance_file) as f:
@@ -62,6 +62,7 @@ def main() -> None:
     cost_limit = float(os.environ.get("MSWEA_COST_LIMIT", 15.0))
     temperature = float(os.environ.get("MSWEA_TEMPERATURE", 0.0))
     llm_timeout = int(os.environ.get("MSWEA_LLM_TIMEOUT", 120))
+    max_tokens = int(os.environ.get("MSWEA_MAX_TOKENS", 4096))
 
     logger.info("Starting mini-swe-agent for %s (model=%s)", instance_id, model_name)
 
@@ -84,6 +85,7 @@ def main() -> None:
             "temperature": temperature,
             "drop_params": True,
             "timeout": llm_timeout,
+            "max_tokens": max_tokens,
         }
         extra_kwargs = {}
         if "anthropic" in model_name or "claude" in model_name:
@@ -126,7 +128,9 @@ def main() -> None:
         exit_status, result_message, patch = agent.run(problem_statement)
 
         logger.info("mini-swe-agent finished: %s (patch length: %d)", exit_status, len(patch) if patch else 0)
-        json.dump({"exit_status": str(exit_status), "patch": patch or ""}, sys.stdout)
+        Path(args.result_file).write_text(
+            json.dumps({"exit_status": str(exit_status), "patch": patch or ""})
+        )
     finally:
         env.cleanup()
 
