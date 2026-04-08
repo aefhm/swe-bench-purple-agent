@@ -181,7 +181,7 @@ class Agent:
             instance_file = f.name
 
         try:
-            timeout = int(os.environ.get("MSWEA_SUBPROCESS_TIMEOUT", 3600))
+            timeout = int(os.environ.get("MSWEA_SUBPROCESS_TIMEOUT", 1800))
 
             # Thread-safe queue: subprocess thread pushes lines, async task consumes them
             log_queue: queue.Queue[str | None] = queue.Queue()
