@@ -17,7 +17,7 @@
       subprocess_timeout_seconds: {
         type: "integer",
         description: "Wall-clock timeout for one mini-swe-agent subprocess run.",
-        default: 1800,
+        default: 900,
       },
     },
     required: [],
@@ -30,6 +30,7 @@
 
     env: {
       MSWEA_COST_TRACKING: "ignore_errors",
+      MSWEA_MAX_TOKENS: "2048",
       MODEL_NAME: "${config.model_name}",
       OPENAI_API_KEY: { when: "config.openai_api_key", value: "${config.openai_api_key}" },
       ANTHROPIC_API_KEY: { when: "config.anthropic_api_key", value: "${config.anthropic_api_key}" },
