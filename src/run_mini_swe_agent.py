@@ -133,6 +133,17 @@ def main() -> None:
         )
     finally:
         env.cleanup()
+        # Remove the coding image to free disk on CI runners
+        try:
+            import subprocess
+            subprocess.run(
+                ["docker", "rmi", "-f", docker_image],
+                capture_output=True,
+                timeout=60,
+            )
+            logger.info("Removed coding image: %s", docker_image)
+        except Exception as e:
+            logger.warning("Failed to remove coding image %s: %s", docker_image, e)
 
 
 if __name__ == "__main__":
