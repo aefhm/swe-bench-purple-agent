@@ -97,9 +97,3 @@ environment:
     PIP_PROGRESS_BAR: 'off'
     TQDM_DISABLE: '1'
   environment_class: docker
-
-model:
-  model_name: "deepseek/deepseek-chat"
-  model_kwargs:
-    drop_params: true
-    temperature: 0.0
